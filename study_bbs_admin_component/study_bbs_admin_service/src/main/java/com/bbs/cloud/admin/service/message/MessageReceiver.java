@@ -9,7 +9,10 @@ import org.apache.poi.util.StringUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
+
+import java.util.List;
 
 /**
  * @ClassName MessageReceiver
@@ -20,6 +23,11 @@ import org.springframework.stereotype.Component;
 @Component
 public class MessageReceiver {
     final static Logger logger = LoggerFactory.getLogger(ServiceService.class);
+
+    @Autowired
+    private List<MessageHandler> messageHandlers; //注入接口实现类
+
+
     //监听有公司方运维中心没有消息
     @RabbitListener(queues = RabbitContant.SERVICE_QUEUE_NAME)
     public void receiver(String message) {
@@ -42,6 +50,7 @@ public class MessageReceiver {
         }
         Integer serviceType = orderMessageDTO.getServiceType();
         //TODO 消息处理
+        messageHandlers.stream().filter(item -> item.getServiceType().equals(serviceType)).findFirst().get().handler(orderMessageDTO);
     }
 }
 
