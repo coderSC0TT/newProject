@@ -75,21 +75,40 @@ public class LuckyBagActivityManage implements ActivityManage {
             return HttpResult.generateHttpResult(ActivityException.LUCKY_BAG_ACTIVITY_SERVICE_GIFT_AMOUNT_NOT_MEET);
         }
         //第一步 创建服务
-        ActivityDTO activityDTO =new ActivityDTO();
-        activityDTO.setId(CommonUtil.createUUID());
-        activityDTO.setName(param.getName());
-        activityDTO.setContent(param.getContent());
-        activityDTO.setActivityType(param.getActivityType());
-        activityDTO.setAmount(amount);
-        activityDTO.setStatus(ActivityStatusEnum.INITIAL.getStatus());
-        activityDTO.setCreateDate(new Date());
-        activityDTO.setUpdateDate(new Date());
-        activityMapper.insertActivityDTO(activityDTO);
-        packLuckyBag(amount,activityDTO.getId());
-        //第三步 更新服务组件礼物数量列表
-        Collection<GiftDTO> updateGiftDTOCollection = packLuckyBag(amount,activityDTO.getId());
-        serviceFeighClient.updateServiceGiftList(JsonUtils.objectToJson(updateGiftDTOCollection));
-        return null;
+        try{
+            ActivityDTO activityDTO =new ActivityDTO();
+            activityDTO.setId(CommonUtil.createUUID());
+            activityDTO.setName(param.getName());
+            activityDTO.setContent(param.getContent());
+            activityDTO.setActivityType(param.getActivityType());
+            activityDTO.setAmount(amount);
+            activityDTO.setStatus(ActivityStatusEnum.INITIAL.getStatus());
+            activityDTO.setCreateDate(new Date());
+            activityDTO.setUpdateDate(new Date());
+            activityMapper.insertActivityDTO(activityDTO);
+            packLuckyBag(amount,activityDTO.getId());
+            //第三步 更新服务组件礼物数量列表
+            List<GiftDTO> giftDTOList = packLuckyBag(amount, activityDTO.getId());
+            logger.info("开始创建福袋活动---更新服务组件礼物列表, 请求参数:{}", JsonUtils.objectToJson(param));
+            HttpResult updateResult = serviceFeighClient.updateServiceGiftList(JsonUtils.objectToJson(giftDTOList));
+            if(updateResult == null || !CommonExceptionEnum.SUCCESS.getCode().equals(updateResult.getCode())) {
+                logger.info("开始创建福袋活动---更新服务组件礼物列表异常, 请求参数:{}", JsonUtils.objectToJson(param));
+                throw new HttpException(ActivityException.LUCKY_BAG_ACTIVITY_SERVICE_GIFT_LIST_UPDATE_FAIL);
+            }
+
+        }catch (HttpException e){
+            logger.info("开始创建福袋活动, 发生HttpException异常, 请求参数:{}", JsonUtils.objectToJson(param));
+            e.printStackTrace();
+            throw e;
+        }catch (Exception e){
+            logger.info("开始创建福袋活动, 发生Exception异常, 请求参数:{}", JsonUtils.objectToJson(param));
+            e.printStackTrace();
+            throw e;
+        }finally {
+
+        }
+        return HttpResult.ok();
+
     }
     /**
      * 生成1-10之间的随机数
@@ -105,7 +124,7 @@ public class LuckyBagActivityManage implements ActivityManage {
     /*
     包装福袋与返回更新礼物列表
      */
-    private Collection<GiftDTO> packLuckyBag(Integer amount,String activityId) {
+    private List<GiftDTO> packLuckyBag(Integer amount,String activityId) {
         //第二步 包装福袋
         HttpResult<String> result=serviceFeighClient.queryServiceGiftList();
         if(result == null || !CommonExceptionEnum.SUCCESS.getCode().equals(result.getCode()) || result.getData() == null) {
@@ -134,9 +153,9 @@ public class LuckyBagActivityManage implements ActivityManage {
         //先插入生成的福袋
         luckyBagMapper.insertLuckyBag(luckyBagDTOList);
         //插入福袋更新没问题 返回服务组件要更新的礼物集合
-        Collection<GiftDTO> updateGiftDTOCollection = giftDTOMap.values();
+        List giftDTOList = Arrays.asList(giftDTOMap.values().toArray());
 
-        return updateGiftDTOCollection;
+        return giftDTOList;
 
     }
 
