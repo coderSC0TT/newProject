@@ -2,9 +2,11 @@ package com.bbs.cloud.admin.activity.service.manage;
 
 import com.bbs.cloud.admin.activity.contant.ActivityContant;
 import com.bbs.cloud.admin.activity.dto.ActivityDTO;
+import com.bbs.cloud.admin.activity.dto.GiftDTO;
 import com.bbs.cloud.admin.activity.dto.LuckyBagDTO;
 import com.bbs.cloud.admin.activity.exception.ActivityException;
 import com.bbs.cloud.admin.activity.mapper.ActivityMapper;
+import com.bbs.cloud.admin.activity.mapper.LuckyBagMapper;
 import com.bbs.cloud.admin.activity.params.CreateActivityParam;
 import com.bbs.cloud.admin.activity.params.OperatorActivityParam;
 import com.bbs.cloud.admin.activity.service.ActivityManage;
@@ -12,6 +14,7 @@ import com.bbs.cloud.admin.activity.service.ActivityService;
 import com.bbs.cloud.admin.common.enums.activity.ActivityStatusEnum;
 import com.bbs.cloud.admin.common.enums.activity.LuckyBagStatusEnum;
 import com.bbs.cloud.admin.common.error.CommonExceptionEnum;
+import com.bbs.cloud.admin.common.error.HttpException;
 import com.bbs.cloud.admin.common.feigh.client.ServiceFeighClient;
 import com.bbs.cloud.admin.common.feigh.fallback.ServiceFeighClientFallback;
 import com.bbs.cloud.admin.common.result.HttpResult;
@@ -20,12 +23,11 @@ import com.bbs.cloud.admin.common.util.JsonUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.ObjectUtils;
 
 import javax.annotation.Resource;
-import java.util.ArrayList;
-import java.util.Date;
-import java.util.List;
+import java.util.*;
 
 /**
  * @ClassName LuckyBagActivityManage
@@ -41,9 +43,13 @@ public class LuckyBagActivityManage implements ActivityManage {
     private ActivityMapper activityMapper;
 
     @Resource
+    private LuckyBagMapper luckyBagMapper;
+
+    @Resource
     private ServiceFeighClient serviceFeighClient;
 
     @Override
+    @Transactional
     public HttpResult createActivity(CreateActivityParam param) {
         logger.info("开始创建福袋活动, 请求参数:{}", JsonUtils.objectToJson(param));
         //福袋的数量
@@ -68,6 +74,7 @@ public class LuckyBagActivityManage implements ActivityManage {
             logger.info("开始创建福袋活动, 远程调用, 获取服务组件礼物总数量不足, 请求参数:{}, result:{}", JsonUtils.objectToJson(param), JsonUtils.objectToJson(result));
             return HttpResult.generateHttpResult(ActivityException.LUCKY_BAG_ACTIVITY_SERVICE_GIFT_AMOUNT_NOT_MEET);
         }
+        //第一步 创建服务
         ActivityDTO activityDTO =new ActivityDTO();
         activityDTO.setId(CommonUtil.createUUID());
         activityDTO.setName(param.getName());
@@ -78,7 +85,10 @@ public class LuckyBagActivityManage implements ActivityManage {
         activityDTO.setCreateDate(new Date());
         activityDTO.setUpdateDate(new Date());
         activityMapper.insertActivityDTO(activityDTO);
-        packLuckyBag(amount);
+        packLuckyBag(amount,activityDTO.getId());
+        //第三步 更新服务组件礼物数量列表
+        Collection<GiftDTO> updateGiftDTOCollection = packLuckyBag(amount,activityDTO.getId());
+        serviceFeighClient.updateServiceGiftList(JsonUtils.objectToJson(updateGiftDTOCollection));
         return null;
     }
     /**
@@ -92,17 +102,42 @@ public class LuckyBagActivityManage implements ActivityManage {
         return Integer.valueOf(randomNum);
     }
 
-    private void packLuckyBag(Integer amount) {
+    /*
+    包装福袋与返回更新礼物列表
+     */
+    private Collection<GiftDTO> packLuckyBag(Integer amount,String activityId) {
+        //第二步 包装福袋
+        HttpResult<String> result=serviceFeighClient.queryServiceGiftList();
+        if(result == null || !CommonExceptionEnum.SUCCESS.getCode().equals(result.getCode()) || result.getData() == null) {
+            logger.info("开始创建福袋活动, 包装福袋方法内, 远程调用, 获取服务组件礼物列表失败, amount:{}, activityId:{}, result:{}", amount, activityId, JsonUtils.objectToJson(result));
+            throw new HttpException(ActivityException.LUCKY_BAG_ACTIVITY_QUERY_SERVICE_GIFT_LIST_ERROR);
+        }
+        String giftListJson = result.getData();
+        List<GiftDTO> giftDTOS=JsonUtils.jsonToList(giftListJson,GiftDTO.class);
+        Map<Integer, GiftDTO> giftDTOMap = new HashMap<>();
+        giftDTOS.forEach(item -> giftDTOMap.put(item.getGiftType(), item));
         List<LuckyBagDTO> luckyBagDTOList = new ArrayList<>();
         for (int i = 0; i < amount; i++) {
             //包装福袋
             LuckyBagDTO luckyBagDTO = new LuckyBagDTO();
             luckyBagDTO.setId(CommonUtil.createUUID());
-            //luckyBagDTO.setActivityId(activityId);
+            luckyBagDTO.setActivityId(activityId);
             luckyBagDTO.setStatus(LuckyBagStatusEnum.NORMAL.getStatus());
             luckyBagDTO.setGiftType(randomGiftType());
             luckyBagDTOList.add(luckyBagDTO);
+            //更新服务组件礼物的数量
+            GiftDTO giftDTO = giftDTOMap.get(luckyBagDTO.getGiftType());
+            giftDTO.setUsedAmount(giftDTO.getUsedAmount() + ActivityContant.DEFAULT_LUCKY_BAG_CONSUME_AMOUNT);
+            giftDTO.setUnusedAmount(giftDTO.getUnusedAmount() - ActivityContant.DEFAULT_LUCKY_BAG_CONSUME_AMOUNT);
+            giftDTOMap.put(luckyBagDTO.getGiftType(), giftDTO);
         }
+        //先插入生成的福袋
+        luckyBagMapper.insertLuckyBag(luckyBagDTOList);
+        //插入福袋更新没问题 返回服务组件要更新的礼物集合
+        Collection<GiftDTO> updateGiftDTOCollection = giftDTOMap.values();
+
+        return updateGiftDTOCollection;
+
     }
 
     @Override

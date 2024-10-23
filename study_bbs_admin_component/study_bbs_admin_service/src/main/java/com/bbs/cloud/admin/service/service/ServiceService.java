@@ -64,5 +64,19 @@ public class ServiceService {
         });
         return new HttpResult(JsonUtils.objectToJson(giftVOS));
     }
+
+    public HttpResult updateServiceGiftList(String data) {
+        try {
+            logger.info("远程调用----start----更新服务组件的礼物列表, data:{}", data);
+            List<ServiceGiftDTO> updateServiceGiftDTOList = JsonUtils.jsonToList(data, ServiceGiftDTO.class);
+            serviceGiftMapper.updateGiftDTOList(updateServiceGiftDTOList);
+            logger.info("远程调用--------更新服务组件的礼物列表成功, data:{}", data);
+        } catch (Exception e) {
+            logger.info("远程调用-------更新服务组件的礼物列表, 发生异常, data:{}", data);
+            e.printStackTrace();
+            return HttpResult.fail();
+        }
+        return HttpResult.ok();
+    }
 }
 

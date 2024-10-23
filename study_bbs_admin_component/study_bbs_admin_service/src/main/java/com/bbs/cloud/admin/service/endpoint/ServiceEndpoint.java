@@ -3,9 +3,7 @@ package com.bbs.cloud.admin.service.endpoint;
 import com.bbs.cloud.admin.common.result.HttpResult;
 import com.bbs.cloud.admin.service.service.ServiceService;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
 /**
  * @ClassName ServiceEndpoint
@@ -28,6 +26,11 @@ public class ServiceEndpoint {
     @GetMapping("/gilt/list/query")
     public HttpResult<String> queryServiceGiftList() {
         return serviceService.queryServiceGiftList();
+    }
+
+    @PostMapping("/gilt/list/update")
+    public HttpResult updateServiceGiftList(@RequestParam("data") String data) {
+        return serviceService.updateServiceGiftList(data);
     }
 }
 
